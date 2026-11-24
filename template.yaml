@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Serverless Resume API - API Gateway + Lambda + DynamoDB,
+  protected by an API key and a usage plan (throttling + quota).
+
+Parameters:
+  StageName:
+    Type: String
+    Default: Prod
+    Description: API Gateway stage name.
+  ThrottleRateLimit:
+    Type: Number
+    Default: 5
+    Description: Steady-state requests per second allowed per API key.
+  ThrottleBurstLimit:
+    Type: Number
+    Default: 10
+    Description: Maximum burst of requests allowed per API key.
+  DailyQuota:
+    Type: Number
+    Default: 1000
+    Description: Maximum requests per day per API key.
+  DataVersion:
+    Type: String
+    Default: "1"
+    Description: Change this value to re-seed DynamoDB from src/resume.json on the next deploy.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 128
+    Timeout: 10
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref ResumeTable
+        LOG_LEVEL: INFO
+
+Resources:
+  # ---------------------------------------------------------------- DynamoDB
+  # Partition key: section  (personal | experience | education | skills)
+  # Sort key:      itemId   ("profile" or a zero-padded index such as "001")
+  ResumeTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: section
+          AttributeType: S
+        - AttributeName: itemId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: section
+          KeyType: HASH
+        - AttributeName: itemId
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ------------------------------------------------------------- API Gateway
+  ResumeApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      StageName: !Ref StageName
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          UsagePlanName: !Sub "${AWS::StackName}-usage-plan"
+          Description: Rate limit and daily quota for the Resume API.
+          Throttle:
+            RateLimit: !Ref ThrottleRateLimit
+            BurstLimit: !Ref ThrottleBurstLimit
+          Quota:
+            Limit: !Ref DailyQuota
+            Period: DAY
+
+  # ------------------------------------------------------------------ Lambda
+  ResumeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Serves resume sections from DynamoDB.
+      CodeUri: src/
+      Handler: handler.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ResumeTable
+      Events:
+        GetResume:
+          Type: Api
+          Properties: { RestApiId: !Ref ResumeApi, Path: /resume, Method: get }
+        GetPersonal:
+          Type: Api
+          Properties: { RestApiId: !Ref ResumeApi, Path: /personal, Method: get }
+        GetExperience:
+          Type: Api
+          Properties: { RestApiId: !Ref ResumeApi, Path: /experience, Method: get }
+        GetEducation:
+          Type: Api
+          Properties: { RestApiId: !Ref ResumeApi, Path: /education, Method: get }
+        GetSkills:
+          Type: Api
+          Properties: { RestApiId: !Ref ResumeApi, Path: /skills, Method: get }
+
+  # Loads src/resume.json into DynamoDB when the stack is created or updated.
+  SeedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: CloudFormation custom resource that seeds the resume table.
+      CodeUri: src/
+      Handler: seed.lambda_handler
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ResumeTable
+
+  ResumeDataSeed:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt SeedFunction.Arn
+      DataVersion: !Ref DataVersion
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the Resume API.
+    Value: !Sub "https://${ResumeApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  ApiKeyId:
+    Description: ID of the API key (fetch its value with the command in README.md).
+    Value: !Ref ResumeApiApiKey
+  TableName:
+    Description: DynamoDB table holding the resume data.
+    Value: !Ref ResumeTable
