@@ -1,0 +1,37 @@
+{
+  "personal": {
+    "name": "Your Full Name",
+    "title": "B.Sc Computer Science Student",
+    "email": "YOUR_EMAIL",
+    "location": "Maharashtra, India",
+    "summary": "Computer Science student interested in cloud computing, software development and building practical applications.",
+    "links": {
+      "github": "YOUR_GITHUB_LINK",
+      "linkedin": "YOUR_LINKEDIN_LINK"
+    }
+  },
+  "experience": [],
+  "education": [
+    {
+      "institution": "VIVA College of Arts, Science and Commerce",
+      "degree": "B.Sc",
+      "field": "Computer Science",
+      "startDate": "YOUR_START_YEAR",
+      "endDate": "YOUR_EXPECTED_END_YEAR"
+    }
+  ],
+  "skills": [
+    {
+      "category": "Programming",
+      "items": ["Python", "HTML", "CSS", "JavaScript", "SQL"]
+    },
+    {
+      "category": "Cloud",
+      "items": ["AWS Lambda", "API Gateway", "DynamoDB", "CloudFormation"]
+    },
+    {
+      "category": "Tools",
+      "items": ["Git", "GitHub"]
+    }
+  ]
+}
